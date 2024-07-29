@@ -1,0 +1,179 @@
+# Thresholding the weighted networks according the "consistency-based technique"
+
+# INPUT: real weighted networks as weighted adjacency matrices
+# OUTPUT: real unweighted networks as binary thresholded matrices and as edgelists
+
+# Libraries
+library(igraph)
+library(EnvStats)
+
+# Change your path for the folder DTI_Healthy_NKI_Rockland/DTI
+path <- "DTI_Healthy_NKI_Rockland/DTI"
+
+# Create an empty folder "real_adj" to save outputs
+path1 <- "real_adj"
+# Create an empty folder "real_edgelist" to save outputs
+path2 <- "real_edgelist"
+
+consensus <- 0.5 # only if at least this percentage value between subjects have the link (i,j), we consider its weight/length value. Otherwise, we set to NA the value in the cv (coefficient of variation) matrix
+percentiles <- c(0.4,0.6,0.7,0.9) # thresholds, i.e. the percentiles of edge weight/edge length cv values distribution
+
+filenames <- list.files(paste0(path), pattern="*.txt") # to have file names
+subjects <- vector() # txt names
+for(i in 1:length(filenames)){
+  if(((i-1)%%4)==0){ # saving only adj matrices txt
+    subjects <- append(subjects, filenames[i])
+  }
+}
+
+# Deriving GroupMean network
+somma <- read.csv(paste0(path, "/", subjects[1]), header=F, sep="")
+for(i in 2:length(subjects)){
+  data <- read.csv(paste0(path, "/", subjects[i]), header=F, sep="")
+  data <- as.matrix(data) # transforming in a matrix
+  somma <- somma + data
+}
+data_dti <- somma/length(subjects)
+data_dti <- as.matrix(data_dti) # GroupMean weighted matrix
+
+# Consistency matrix # a_{ij} = w_{ij} / f_{ij} (weight / edge length)
+GMc <- matrix(nrow=188, ncol=188)
+dis <- read.csv(paste0(path, "/NKI_Rockland_1013090_DTI_region_xyz_centers.txt"), header=F, sep="")
+for(i in 1:188){
+  for(j in i:188){
+    if(i==j){GMc[i,j] <- 0}
+    else{
+      f <- sqrt((dis[i,1]-dis[j,1])^2 + (dis[i,2]-dis[j,2])^2 + (dis[i,3]-dis[j,3])^2) # distanza euclidea
+      GMc[i,j] <- data_dti[i,j] / f # weight/length
+      GMc[j,i] <- GMc[i,j]
+    }
+  }
+}
+
+# Calculating CV matrix
+
+for(p in 1:length(subjects)){
+  data <- read.csv(paste0(path, "/", subjects[p]), header=F, sep="") # weighted adj matrix for each subject
+  data <- as.matrix(data) # transforming in a matrix
+  Sc <- matrix(nrow=188, ncol=188)
+  for(i in 1:188){
+    for(j in i:188){
+      if(i==j){Sc[i,j] <- 0}
+      else{
+        f <- sqrt((dis[i,1]-dis[j,1])^2 + (dis[i,2]-dis[j,2])^2 + (dis[i,3]-dis[j,3])^2)
+        Sc[i,j] <- data[i,j] / f # weight/length
+        Sc[j,i] <- Sc[i,j]
+      }
+    }
+  }
+  assign(paste0("Sc",p),Sc)
+}
+
+
+Sc_CV <- matrix(nrow=188, ncol=188) # single matrix with coeffcient of variation (cv) values.
+# At first we set its values to NA. They will be NA if i==j and if (i,j)==0 in more than 75% of subjects.
+for(i in 1:188){
+  for(j in i:188){
+    if(i!=j){ # in the diagonal (i,j)==NA (0 values have a different meaning, when cv(i,j)=0 means that weight/length of (i,j) has low consistency, i.e. high variation between subjects)
+      v <- vector() # vector with all values for the same link (i,j)
+      for(p in 1:length(subjects)){
+        Sc <- get(paste0("Sc",p))
+        if(Sc[i,j]==0){v <- append(v, NA)}
+        else{v <- append(v, Sc[i,j])}
+      }
+      if(sum(is.na(v))<((1-consensus)*length(subjects))){ # otherwise the value in the matrix will be NA
+        Sc_CV[i,j] <- cv(v, na.rm=TRUE)
+        Sc_CV[j,i] <- Sc_CV[i,j]
+      }
+    }
+  }
+}
+
+Sc_CV_v <- Sc_CV[!is.na(Sc_CV)] # the vector without considering NA values (i.e. that in the diagonal and that not reaching consensus)
+
+quantiles <- vector()
+for(quant in percentiles){
+  quantiles <- append(quantiles, quantile(as.vector(Sc_CV_v), quant))
+}
+
+# GroupMean
+
+den <- vector()
+# From the matrix weight/distance, now we delete edges more and more gradually less consistent
+for(per in 1:length(quantiles)){
+  GM_thr <- matrix(0, nrow=188, ncol=188)
+  for(i in 1:188){
+    for(j in i:188){
+      if(!is.na(Sc_CV[i,j])){ # if (i,j)==NA, then GM_thr(i,j)==0
+        if(Sc_CV[i,j]<quantiles[per] & GMc[i,j]>0){
+          GM_thr[i,j] <- 1 # density will grow increasing the percentile, there will be more links (less consistent, with major sd)
+          GM_thr[j,i] <- 1
+        }
+      }
+    }
+  }
+  GM_thr <- as.matrix(GM_thr)
+  g <- graph.adjacency(GM_thr, mode="undirected", weighted=TRUE)
+  
+  n <- length(V(g))
+  den <- append(den, round(length(E(g))/(n*(n-1)/2),2)) # thresholded Groupmean network densities
+  
+  write.csv(GM_thr, file = paste0(path1,"/A", per, ".csv")) # saving adj matrix
+  
+  LCC <- vector()
+  v1 <- as.vector(V(g))
+  components <- igraph::clusters(g, mode="weak")
+  biggest_cluster_id <- which.max(components$csize)
+  vert_ids <- V(g)[components$membership == biggest_cluster_id]
+  v2 <- as.vector(vert_ids)
+  g <- igraph::induced_subgraph(g, vert_ids)
+
+  df <- as.data.frame(as_edgelist(g))
+  edgelist <- data.frame(edges=rep(NA, nrow(df)))
+  for(r in 1:nrow(df)){
+    name <- paste0(df[r,1]," ",df[r,2])
+    edgelist[r,1] <- name
+  }
+  nome <- paste0(path2,"/EL", per, ".txt")
+  write.table(edgelist, file=nome, row.names=FALSE, col.names=FALSE, sep="\t", quote=FALSE) # saving edgelists
+}
+print(den)
+
+# Subjects
+
+for(p in 1:length(subjects)){
+  Sc <- get(paste0("Sc",p))
+  for(per in 1:length(quantiles)){
+    S_thr <- matrix(0, nrow=188, ncol=188)
+    for(i in 1:188){
+      for(j in i:188){
+        if(!is.na(Sc_CV[i,j])){
+          if(Sc_CV[i,j]<quantiles[per] & Sc[i,j]>0){
+            S_thr[i,j] <- 1
+            S_thr[j,i] <- 1
+          }
+        }
+      }
+    }
+    S_thr <- as.matrix(S_thr)
+    write.csv(S_thr, file = paste0(path1,"/A", per, "_p", p, ".csv"))
+    
+    g <- graph.adjacency(S_thr, mode="undirected", weighted=TRUE)
+    LCC <- vector()
+    v1 <- as.vector(V(g))
+    components <- igraph::clusters(g, mode="weak")
+    biggest_cluster_id <- which.max(components$csize)
+    vert_ids <- V(g)[components$membership == biggest_cluster_id]
+    v2 <- as.vector(vert_ids)
+    g <- igraph::induced_subgraph(g, vert_ids)
+    
+    df <- as.data.frame(as_edgelist(g))
+    edgelist <- data.frame(edges=rep(NA, nrow(df)))
+    for(r in 1:nrow(df)){
+      name <- paste0(df[r,1]," ",df[r,2])
+      edgelist[r,1] <- name
+    }
+    nome <- paste0(path2,"/EL", per, "_p", p, ".txt")
+    write.table(edgelist, file=nome, row.names=FALSE, col.names=FALSE, sep="\t", quote=FALSE) # saving edgelists
+  }
+}
