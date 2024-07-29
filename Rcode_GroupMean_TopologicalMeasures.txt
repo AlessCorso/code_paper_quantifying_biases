@@ -1,0 +1,176 @@
+# GroupMean (i.e. approach A)
+
+# INPUT: averaged adjacency matrices (real data and synthetic data derived from
+# configuration model cm, stochastic block model sbm, and hyperbolic model hm)
+# OUTPUT: one dataframe nrow x ncolumn for each analysed topological measure
+# nrow is the number of real data thresholds,
+# ncolumns is 5:
+# threshold numbers, real data, cm data, sbm data, hm data
+
+# Library
+library(igraph)
+
+# Change your paths to real_adj, cm, sbm and hm folders
+path <- "real_adj/"
+path_cm <- "cm/"
+path_sbm <- "sbm/"
+path_hm <- "hm/"
+
+# Create an empty folder "output" to save outputs
+path_df <- "output_df/"
+
+# Small-worldness index (macro measure)
+er_gcl_real <- vector()
+er_apl_real <- vector()
+
+# Average shortest path length (macro measure)
+apl_real_gm <- vector()
+apl_cm_gm <- vector()
+apl_sbm_gm <- vector()
+apl_hm_gm <- vector()
+
+# Global communication efficiency (macro measure)
+# Import the function GCE of the measure global communication efficiency from the following reference
+# Bertagnolli, Giulia, Riccardo Gallotti, and Manlio De Domenico. "Quantifying efficient information exchange in real network flows." Communications Physics 4.1 (2021): 125.
+gce_real_gm <- vector()
+gce_cm_gm <- vector()
+gce_sbm_gm <- vector()
+gce_hm_gm <- vector()
+
+# Modularity (meso measure)
+mod_real_gm <- vector()
+mod_cm_gm <- vector()
+mod_sbm_gm <- vector()
+mod_hm_gm <- vector()
+
+# Global clustering (meso measure)
+gcl_real_gm <- vector()
+gcl_cm_gm <- vector()
+gcl_sbm_gm <- vector()
+gcl_hm_gm <- vector()
+
+# Size of the synthetic samples
+rep <- 100
+
+# Thresholds
+threshold1 <- 1
+threshold2 <- 6
+
+for(per in threshold1:threshold2){
+  adj <- read.csv(paste0(path, "A_dti", per, ".csv"), header=T, sep=",")
+  adj <- as.matrix(adj[,c(-1)])
+  g <- graph.adjacency(adj, mode="undirected", weighted=TRUE)
+  
+  # REAL
+  apl_real_gm <- append(apl_real_gm, mean_distance(g))
+  gce_real_gm <- append(gce_real_gm, GCE(g)$normalised)
+  mod_real_gm <- append(mod_real_gm, modularity(cluster_louvain(g)))
+  gcl_real_gm <- append(gcl_real_gm, transitivity(g))
+  
+  er_gcl_somma_real <- 0 # small-worldness index measure
+  er_apl_somma_real <- 0
+  
+  apl_somma_cm <- 0 # average shortest path length
+  apl_somma_sbm <- 0
+  apl_somma_hm <- 0
+  
+  gce_somma_cm <- 0 # global communication efficiency
+  gce_somma_sbm <- 0
+  gce_somma_hm <- 0
+  
+  mod_somma_cm <- 0 # modularity
+  mod_somma_sbm <- 0
+  mod_somma_hm <- 0
+  
+  gcl_somma_cm <- 0 # global clustering
+  gcl_somma_sbm <- 0
+  gcl_somma_hm <- 0
+  
+  for(v in 1:rep){
+
+    adj_cm <- read.csv(paste0(path_cm, "A_dti", per, "cm_", v, ".csv"), header=T, sep=",")
+    adj_cm <- as.matrix(adj_cm[,c(-1)])
+    g_cm <- graph.adjacency(adj_cm, mode="undirected", weighted=TRUE)
+  
+    adj_sbm <- read.csv(paste0(path_sbm, "A_dti", per, "sbm_", v, ".csv"), header=T, sep=",")
+    adj_sbm <- as.matrix(adj_sbm[,c(-1)])
+    g_sbm <- graph.adjacency(adj_sbm, mode="undirected", weighted=TRUE)
+    
+    adj_hm <- read.csv(paste0(path_hm, "A_dti", per, "hm_", v, ".csv"), header=T, sep=",")
+    adj_hm <- as.matrix(adj_hm[,c(-1)])
+    g_hm <- graph.adjacency(adj_hm, mode="undirected", weighted=TRUE)
+    
+    # real
+    g_er_real <- erdos.renyi.game(length(V(g)), length(E(g)), type="gnm") # for small-worldness index measure
+    er_gcl_somma_real <- er_gcl_somma_real + transitivity(g_er_real)
+    er_apl_somma_real <- er_apl_somma_real + mean_distance(g_er_real)
+    
+    # CM
+    apl_somma_cm <- apl_somma_cm + mean_distance(g_cm)
+    gce_somma_cm <- gce_somma_cm + GCE(g_cm, directed=FALSE, normalised=FALSE, weights=NULL)
+    mod_somma_cm <- mod_somma_cm + modularity(cluster_louvain(g_cm))
+    gcl_somma_cm <- gcl_somma_cm + transitivity(g_cm)
+    
+    # SBM
+    apl_somma_sbm <- apl_somma_sbm + mean_distance(g_sbm)
+    gce_somma_sbm <- gce_somma_sbm + GCE(g_sbm, directed=FALSE, normalised=FALSE, weights=NULL)
+    mod_somma_sbm <- mod_somma_sbm + modularity(cluster_louvain(g_sbm))
+    gcl_somma_sbm <- gcl_somma_sbm + transitivity(g_sbm)
+    
+    # HM
+    apl_somma_hm <- apl_somma_hm + mean_distance(g_hm)
+    gce_somma_hm <- gce_somma_hm + GCE(g_hm, directed=FALSE, normalised=FALSE, weights=NULL)
+    mod_somma_hm <- mod_somma_hm + modularity(cluster_louvain(g_hm))
+    gcl_somma_hm <- gcl_somma_hm + transitivity(g_hm)
+    
+  }
+  # Vectors with length equal to the number of thresholds
+  er_gcl_real <- append(er_gcl_real, er_gcl_somma_real/rep)
+  er_apl_real <- append(er_apl_real, er_apl_somma_real/rep)
+  
+  apl_cm_gm <- append(apl_cm_gm, apl_somma_cm/rep)
+  apl_sbm_gm <- append(apl_sbm_gm, apl_somma_sbm/rep)
+  apl_hm_gm <- append(apl_hm_gm, apl_somma_hm/rep)
+  
+  gce_cm_gm <- append(gce_cm_gm, gce_somma_cm/rep)
+  gce_sbm_gm <- append(gce_sbm_gm, gce_somma_sbm/rep)
+  gce_hm_gm <- append(gce_hm_gm, gce_somma_hm/rep)
+  
+  mod_cm_gm <- append(mod_cm_gm, mod_somma_cm/rep)
+  mod_sbm_gm <- append(mod_sbm_gm, mod_somma_sbm/rep)
+  mod_hm_gm <- append(mod_hm_gm, mod_somma_hm/rep)
+  
+  gcl_cm_gm <- append(gcl_cm_gm, gcl_somma_cm/rep)
+  gcl_sbm_gm <- append(gcl_sbm_gm, gcl_somma_sbm/rep)
+  gcl_hm_gm <- append(gcl_hm_gm, gcl_somma_hm/rep)
+}
+
+df_apl <- data.frame(thr=threshold1:threshold2, real_gm=apl_real_gm, cm_gm=apl_cm_gm, sbm_gm=apl_sbm_gm, hm_gm=apl_hm_gm)
+df_gce <- data.frame(thr=threshold1:threshold2, real_gm=gce_real_gm, cm_gm=gce_cm_gm, sbm_gm=gce_sbm_gm, hm_gm=gce_hm_gm)
+df_mod <- data.frame(thr=threshold1:threshold2, real_gm=mod_real_gm, cm_gm=mod_cm_gm, sbm_gm=mod_sbm_gm, hm_gm=mod_hm_gm)
+df_gcl <- data.frame(thr=threshold1:threshold2, real_gm=gcl_real_gm, cm_gm=gcl_cm_gm, sbm_gm=gcl_sbm_gm, hm_gm=gcl_hm_gm)
+
+eq3_real_gm <- df_gcl$real_gm / er_gcl_real
+eq4_real_gm <- df_apl$real_gm / er_apl_real
+swi_real_gm <- eq3_real_gm / eq4_real_gm
+
+eq3_cm_gm <- df_gcl$cm_gm / er_gcl_real
+eq4_cm_gm <- df_apl$cm_gm / er_apl_real
+swi_cm_gm <- eq3_cm_gm / eq4_cm_gm
+
+eq3_sbm_gm <- df_gcl$sbm_gm / er_gcl_real
+eq4_sbm_gm <- df_apl$sbm_gm / er_apl_real
+swi_sbm_gm <- eq3_sbm_gm / eq4_sbm_gm
+
+eq3_hm_gm <- df_gcl$hm_gm / er_gcl_real
+eq4_hm_gm <- df_apl$hm_gm / er_apl_real
+swi_hm_gm <- eq3_hm_gm / eq4_hm_gm
+
+df_swi <- data.frame(thr=threshold1:threshold2, real_gm=swi_real_gm, cm_gm=swi_cm_gm, sbm_gm=swi_sbm_gm, hm_gm=swi_hm_gm)
+
+# Dataframe with GroupMean single values
+write.csv(df_apl, file = paste0(path_df,"df_apl.csv"))
+write.csv(df_gce, file = paste0(path_df,"df_gce.csv"))
+write.csv(df_mod, file = paste0(path_df,"df_mod.csv"))
+write.csv(df_gcl, file = paste0(path_df,"df_gcl.csv"))
+write.csv(df_swi, file = paste0(path_df,"df_swi.csv"))
