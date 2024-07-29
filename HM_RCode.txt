@@ -1,0 +1,122 @@
+# Generating synthetic networks following the Hyperbolic Model (hm)
+
+# part 1
+# INPUT: folder of real edgelists
+# OUTPUT: folder "real_edgelist_mercator" obtained through the tool Mercator, see the following reference
+# García-Pérez, G., Allard, A., Serrano, M. Á., & Boguñá, M. (2019). Mercator: uncovering faithful hyperbolic embeddings of complex networks. New Journal of Physics, 21(12), 123033.
+
+# part 2
+# INPUT: folder "real_edgelist_mercator"
+# OUTPUT: synthetic adjacency matrices
+
+# Libraries
+library(igraph)
+
+# Change your path to the folder: real_edgelist_mercator
+path <- "real_edgelist_mercator/"
+# Write the name of .inf_coord files in real_edgelist_mercator folder
+file_name <- "EL"
+# Create an empty folder "hm" to save new data
+path1 <- "hm/"
+ 
+# Defining the new function
+geom_iper_model <- function(out_coord){
+  
+  n <- as.numeric(gsub("#   - nb. vertices:      ", "", out_coord[7,1]))
+  beta <- as.numeric(gsub("#   - beta:              ", "", out_coord[8,1]))
+  mu <- as.numeric(gsub("#   - mu:                ", "", out_coord[9,1]))
+  R <- as.numeric(gsub("#   - radius_S1:         ", "", out_coord[10,1]))
+  out_coord <- out_coord[c(15:(n+14)),1] # vector of strings
+  df <- data.frame(matrix(NA, nrow=n, ncol=3))
+  namess <- rep(NA, n)
+  for(i in 1:n){
+    a <- strsplit(out_coord[i], " ")
+    v <- vector()
+    for(e in a){v <- append(v,e)}
+    v2 <- vector()
+    for(e in v){if(e!=""){v2 <- append(v2, e)}}
+    df[i,] <- as.numeric(v2[2:4])
+  }
+  colnames(df) <- c("Inf.Kappa", "Inf.Theta", "Inf.Hyp.Rad.")
+
+  x_s <- sample(seq(0,1,0.000001), ((n*n)-n)/2, rep=TRUE) # random vector
+  Xdf <- data.frame(matrix(NA, nrow=n, ncol=n)) # connection probability
+  count <- 1
+  for(i in 1:n){
+    for(j in i:n){
+      if(i==j){Xdf[i,j] <- 0}
+      else{
+        Xdf[i,j] <- x_s[count]
+        Xdf[j,i] <- x_s[count]
+        count <- count + 1
+      }
+    }
+  }
+  
+  # calcolus of connection probability
+  P_ij <- data.frame(matrix(NA, nrow=n, ncol=n)) # connection probability
+  for(i in 1:n){
+    for(j in i:n){ # undirected edges, matrices is symmetric according the diagonal (which is 0, no self-loops)
+      if(i==j){P_ij[i,j] <- 0}
+      else{
+        d_ij <- abs(df$Inf.Theta[i] - df$Inf.Theta[j])*R
+        k_i <- df$Inf.Kappa[i]
+        k_j <- df$Inf.Kappa[j]
+        p_ij <- 1 / (1 + (d_ij / (mu * k_i * k_j))^beta)
+        P_ij[i,j] <- p_ij
+        P_ij[j,i] <- p_ij
+      }
+    }
+  }
+  
+  ADJ <- data.frame(matrix(NA, nrow=n, ncol=n))
+  for(i in 1:n){
+    for(j in i:n){
+      if(i==j){ADJ[i,j] <- 0}
+      else{
+        if(Xdf[i,j] > P_ij[i,j]){
+          ADJ[i,j] <- 0
+          ADJ[j,i] <- 0
+        }
+        else{
+          ADJ[i,j] <- 1
+          ADJ[j,i] <- 1}
+      }
+    }
+  }
+  
+  adj <- as.matrix(ADJ) # transform data_dti in a matrix
+  g_gi <- graph.adjacency(adj, mode="undirected", weighted=TRUE) # to give the graph
+  
+  return(adj)
+}
+
+# From 1 to nsubjects
+subjects <- c(1:196)
+
+# Thresholds
+threshold1 <- 1
+threshold2 <- 6
+
+# Number of synthetic networks you want to generate
+rep <- 100
+
+# GroupMean
+for(per in threshold1:threshold2){
+  for(v in 1:rep){
+    f <- read.csv(paste0(path, file_name, per, ".inf_coord"))
+    adj <- geom_iper_model(out_coord=f) # our new hm function
+    write.csv(adj, file = paste0(path1, "A", per, "hm_", v, ".csv")) # saving adj matrix
+  }
+}
+
+# Subjects
+for(per in threshold1:threshold2){
+  for(p in 1:length(subjects)){
+      for(v in 1:rep){
+      f <- read.csv(paste0(path, file_name, per, "_p", p, ".inf_coord"))
+      adj <- geom_iper_model(out_coord=f) # our new hm function
+      write.csv(adj, file = paste0(path1, "A", per, "_p", p, "hm_", v, ".csv")) # saving adj matrix
+    }
+  }
+}

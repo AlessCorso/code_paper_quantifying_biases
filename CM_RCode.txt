@@ -1,0 +1,54 @@
+# Generating synthetic networks following the Configuration Model (cm)
+
+# INPUT: real adjacency matrices
+# OUTPUT: synthetic adjacency matrices
+
+# Library
+library(igraph)
+
+# Change your path to the folder DTI/real_adj or fMRI/real_adj
+path <- "real_adj/"
+# Create an empty folder "cm" to save new data
+path1 <- "cm/"
+
+# From 1 to nsubjects
+subjects <- c(1:196)
+
+# Thresholds
+threshold1 <- 1
+threshold2 <- 6
+
+# Number of synthetic networks you want to generate
+rep <- 100
+
+# GroupMean
+for(per in threshold1:threshold2){
+  adj <- read.csv(paste0(path, "A", per, ".csv"), header=T, sep=",")
+  adj <- as.matrix(adj[,c(-1)])
+  g <- graph.adjacency(adj, mode="undirected", weighted=TRUE)
+  deg <- as.integer(degree(g))
+  for(v in 1:rep){
+    g_cm <- degree.sequence.game(deg, method="vl")
+    A <- as.matrix(as_adjacency_matrix(g_cm))
+    write.csv(A, file = paste0(path1,"A", per, "cm_", v, ".csv")) # saving adj matrix
+  }
+}
+
+# Subjects
+for(per in threshold1:threshold2){
+  for(p in 1:length(subjects)){
+    for(v in 1:rep){
+      adj <- read.csv(paste0(path, "A", per, "_p", p, ".csv"), header=T, sep=",")
+      adj <- as.matrix(adj[,c(-1)])
+      g <- graph.adjacency(adj, mode="undirected", weighted=TRUE)
+      
+      Isolated = which(degree(g)==0)
+      g <- delete.vertices(g, Isolated)
+      
+      deg <- as.integer(degree(g))
+      g_cm <- degree.sequence.game(deg, method="vl")
+      A <- as.matrix(as_adjacency_matrix(g_cm))
+      write.csv(A, file = paste0(path1,"A", per, "_p", p, "cm_", v, ".csv")) # saving adj matrix
+    }
+  }
+}

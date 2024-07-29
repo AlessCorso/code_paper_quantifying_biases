@@ -1,0 +1,50 @@
+# Generating synthetic networks following the Stochastic Block Model (sbm) - part 2
+
+# INPUT: folders BLOCK and PREF (deriving from real adjacency matrices) generated through the code "SBM_PythonCode_part1"
+# OUTPUT: synthetic adjacency matrices
+
+# Library
+library(igraph)
+
+# Change your path to the folder PREF
+path_pref <- "real_sbm_pref/"
+# Change your path to the folder BLOCK
+path_blocks <- "real_sbm_blocks/"
+# Create an empty folder "sbm" to save new data
+path1 <- "sbm/"
+
+# From 1 to nsubjects
+subjects <- c(1:196)
+
+# Thresholds
+threshold1 <- 1
+threshold2 <- 6
+
+# Number of synthetic networks you want to generate
+rep <- 100
+
+# GroupMean
+for(per in threshold1:threshold2){
+  for(v in 1:rep){
+      pref <- read.csv(paste0(path_pref, "pref_matrix_", per, ".csv"), header=T, sep=",")
+      block <- read.csv(paste0(path_blocks, "block_sizes_", per, ".csv"), header=T, sep=",")
+      vert <- sum(as.integer(block))
+      g_sbm <- sample_sbm(n=vert, pref.matrix=as.matrix(pref), block.sizes=block, directed=F, loops=F)
+      A <- as.matrix(as_adjacency_matrix(g_sbm))
+      write.csv(A, file = paste0(path1,"A", per, "sbm_", v, ".csv")) # saving adj matrix
+  }
+}
+
+# Subjects
+for(per in threshold1:threshold2){
+  for(p in 1:length(subjects)){
+    for(v in 1:rep){
+      pref <- read.csv(paste0(path_pref, "pref_matrix_", per, "_p" , p, ".csv"), header=T, sep=",")
+      block <- read.csv(paste0(path_blocks, "block_sizes_", per, "_p", p, ".csv"), header=T, sep=",")
+      vert <- sum(as.integer(block))
+      g_sbm <- sample_sbm(n=vert, pref.matrix=as.matrix(pref), block.sizes=block, directed=F, loops=F)
+      A <- as.matrix(as_adjacency_matrix(g_sbm))
+      write.csv(A, file = paste0(path1,"A", per, "p_", p, "sbm_", v, ".csv")) # saving adj matrix
+    }
+  }
+}

@@ -1,0 +1,119 @@
+# Generating synthetic networks following the Stochastic Block Model (sbm) - part 1
+
+# INPUT: real adjacency matrices
+# OUTPUT: folders BLOCK and PREF useful to generate synthetic adjacency matrices through the code "SBM_RCode_part2"
+
+# Create empty folders "BLOCK" and "PREF" that will be fill with new data
+# Upload the folder with adj matrices (real_adj.zip)
+
+import pandas as pd
+import graph_tool as gt
+import numpy as np
+import matplotlib.pyplot as plt
+
+# to unzip files: real thresholded adj matrices (groupmeans and subjects)
+import zipfile
+with zipfile.ZipFile("real_adj.zip", 'r') as zip_ref:
+    zip_ref.extractall("")
+    
+# Thresholds
+thrs = [1,2,3,4,5,6]
+
+# From 1 to nsubjects
+ps = range(1,197)
+
+nomi = list()
+nomi_block = list()
+nomi_pref = list()
+nomi_member = list()
+for per in thrs:
+    nomi.append("real_adj/A"+str(per)+".csv")
+    nomi_block.append("BLOCK/block_sizes_"+str(per)+".csv")
+    nomi_pref.append("PREF/pref_matrix_"+str(per)+".csv")
+
+for per in thrs:
+    for p in ps:
+        nomi.append("real_adj/A"+str(per)+"_p"+str(p)+".csv")
+        nomi_block.append("BLOCK/block_sizes_"+str(per)+"_p"+str(p)+".csv")
+        nomi_pref.append("PREF/pref_matrix_"+str(per)+"_p"+str(p)+".csv")
+
+for nome in nomi:
+#nome = nomi[0] # to check one single run
+    indice = nomi.index(nome)
+        
+    data = pd.read_csv(nome, usecols=range(1,189)) # symmetric dataframe with 0 values in the diagonal
+    A1 = data.values
+    adj = A1
+    g = gt.Graph(directed=False) # graph of the real adj matrix
+    g.add_edge_list(np.transpose(adj.nonzero())) # 188 vertices, 26508 edges
+    
+    state = gt.minimize_blockmodel_dl(g)
+    
+    entr = state.entropy() # to choose the better repetition (minor entropy values)
+    for i in range(1,10):
+        state_n = gt.minimize_blockmodel_dl(g)
+        entr_n = state_n.entropy()
+        if entr_n < entr:
+            state = state_n
+            entr = entr_n
+    
+    #state.draw() # to draw the graph
+    b = gt.contiguous_map(state.get_blocks())
+    state = state.copy(b=b)
+    
+    e = state.get_matrix()
+    B = state.get_nonempty_B()
+    pref = e.todense()[:B, :B] # return a matrix
+    #plot.matshow(pref) # to draw the matrix
+    
+    pref = pd.DataFrame(np.array(pref))
+    pref_rel = pref
+    minimo = min(pref.min())
+    massimo = max(pref.max())
+    for i in range(0,len(pref)):
+        for j in range(i,len(pref)):
+            pref_rel[i][j] = (pref[i][j]-minimo)/(massimo-minimo) # to standardize probability values to [0,1]
+            pref_rel[j][i] = pref_rel[i][j]
+    ni = nomi_pref[indice]
+    pref_rel.to_csv(str(ni), index=False) # connection probability between groups # SAVE PREF
+    
+    v = list()
+    for ei in b:
+        v.append(ei)
+    df = pd.DataFrame(np.array(v).reshape(1,len(v)), columns=None)
+    d = dict() # dictionaty where the key is the membership, values the relative quantities
+    for eii in v:
+        if eii not in d:
+            d[eii] = 1
+        else:
+            d[eii] = d[eii] + 1
+    mydict = dict() # sorted dictionaty (by membership value)
+    for key in sorted(d):
+        mydict[key] = d[key]
+    bs = list() # a vector with quantities of nodes in each membership
+    for key in mydict:
+        bs.append(mydict[key])
+    # check: sum(bs) = 188 (number of nodes)
+    
+    dfi = pd.DataFrame(np.array(bs).reshape(1,len(bs)), columns=None)
+    n = nomi_block[indice]
+    dfi.to_csv(str(n), index=False) # how many nodes in each block # SAVE BLOCK
+    
+# to zip folders and download them
+
+import os
+import zipfile
+
+def zipdir(path, ziph):
+    # ziph is zipfile handle
+    for root, dirs, files in os.walk(path):
+        for file in files:
+            ziph.write(os.path.join(root, file))
+
+zipf = zipfile.ZipFile('BLOCK.zip', 'w', zipfile.ZIP_DEFLATED)
+zipdir('./BLOCK', zipf)
+zipf.close()
+        
+zipf = zipfile.ZipFile('PREF.zip', 'w', zipfile.ZIP_DEFLATED)
+zipdir('./PREF', zipf)
+zipf.close()
